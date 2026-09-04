@@ -27,8 +27,9 @@ struct Cam {
 struct DrawParams {
     int2 start;
     int2 end;
-    int radius;
+    int extent;
     int steps;
+    float halfWidth;
     uint value;
     uint head;
 };
@@ -37,13 +38,13 @@ kernel void drawKernel(texture3d<uint, access::write> vol [[texture(0)]],
                        constant DrawParams& dp [[buffer(0)]],
                        uint3 tid [[thread_position_in_grid]])
 {
-    int r = dp.radius;
-    int oy = (int)tid.y - r;
-    int ox = (int)tid.z - r;
-    if (ox * ox + oy * oy > r * r) return;
+    int c = dp.extent / 2;
+    int oy = (int)tid.y - c;
+    int ox = (int)tid.z - c;
+    if (float(ox * ox + oy * oy) > dp.halfWidth * dp.halfWidth) return;
     float f = (dp.steps > 1) ? (float)tid.x / (float)(dp.steps - 1) : 0.0f;
-    float2 c = mix(float2(dp.start), float2(dp.end), f);
-    int2 cell = int2(round(c)) + int2(ox, oy);
+    float2 p = mix(float2(dp.start), float2(dp.end), f);
+    int2 cell = int2(round(p)) + int2(ox, oy);
     if (cell.x < 0 || cell.x > 255 || cell.y < 0 || cell.y > 255) return;
     vol.write(uint4(dp.value, 0u, 0u, 0u), uint3((uint)cell.x, (uint)cell.y, dp.head));
 }

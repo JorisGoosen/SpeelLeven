@@ -7,6 +7,7 @@
 #include <vector>
 #include <algorithm>
 #include <cstdlib>
+#include <cmath>
 
 struct CamUniforms {
     simd::float4 pos;
@@ -28,8 +29,9 @@ struct CamUniforms {
 struct DrawParams {
     int32_t startX, startY;
     int32_t endX, endY;
-    int32_t radius;
+    int32_t extent;
     int32_t steps;
+    float halfWidth;
     uint32_t value;
     uint32_t head;
 };
@@ -44,13 +46,14 @@ public:
 
     void requestReseed(float density) { reseedPending_ = true; reseedDensity_ = density; }
     void requestClear() { clearPending_ = true; }
-    void requestDraw(int startX, int startY, int endX, int endY, int radius, uint32_t value) {
+    void requestDraw(int startX, int startY, int endX, int endY, int width, uint32_t value) {
         DrawParams d;
         d.startX = startX;
         d.startY = startY;
         d.endX = endX;
         d.endY = endY;
-        d.radius = radius;
+        d.halfWidth = (float)width * 0.5f;
+        d.extent = 2 * (int)std::ceil(d.halfWidth) + 1;
         d.steps = std::max(std::max(std::abs(endX - startX), std::abs(endY - startY)) + 1, 1);
         d.value = value;
         d.head = head_;

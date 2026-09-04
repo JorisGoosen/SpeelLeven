@@ -120,8 +120,8 @@ void Renderer::encodeDraw(const DrawParams& d, MTL::CommandBuffer* cb) {
     enc->setTexture(vol_, 0);
     enc->setBytes(&d, sizeof(d), 0);
     enc->dispatchThreads(MTL::Size((NS::UInteger)d.steps,
-                                   (NS::UInteger)(2 * d.radius + 1),
-                                   (NS::UInteger)(2 * d.radius + 1)),
+                                   (NS::UInteger)d.extent,
+                                   (NS::UInteger)d.extent),
                          MTL::Size(1, 16, 16));
     enc->endEncoding();
 }
