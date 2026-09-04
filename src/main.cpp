@@ -16,6 +16,7 @@
 
 struct UIState {
     bool paused = false;
+    bool drawMode = false;
     float tickRate = 20.0f;
     float density = 0.28f;
     float hueCycle = 256.0f;
@@ -25,29 +26,87 @@ struct UIState {
     float reflStrength = 1.0f;
     float metallic = 0.15f;
     float faceting = 1.0f;
+    int brushRadius = 3;
 };
 
 static UIState g_ui;
 static OrbitCamera g_cam;
 static Renderer g_renderer;
+static GLFWwindow* g_window = nullptr;
 static bool g_drag = false;
 static bool g_pan = false;
+static bool g_drawDrag = false;
+static bool g_lastCellValid = false;
+static int g_lastCellX = 0, g_lastCellY = 0;
 static double g_lastX = 0.0, g_lastY = 0.0;
+
+static bool pickTopCell(int* cx, int* cy) {
+    double mx, my;
+    glfwGetCursorPos(g_window, &mx, &my);
+    int ww, wh;
+    glfwGetWindowSize(g_window, &ww, &wh);
+    if (ww <= 0 || wh <= 0) return false;
+    float ndcX = 2.0f * (float)mx / (float)ww - 1.0f;
+    float ndcY = 1.0f - 2.0f * (float)my / (float)wh;
+
+    g_cam.update();
+    float tanY = std::tan(g_cam.fovY * 0.5f);
+    float aspect = g_renderer.aspect();
+    glm::vec3 rd = g_cam.fwd
+                 + g_cam.right * (ndcX * tanY * aspect)
+                 + g_cam.up * (ndcY * tanY);
+    float len = glm::length(rd);
+    if (len < 1e-6f) return false;
+    rd /= len;
+    if (std::fabs(rd.y) < 1e-5f) return false;
+    float t = (0.5f - g_cam.pos.y) / rd.y;
+    if (t <= 0.0f) return false;
+    glm::vec3 p = g_cam.pos + rd * t;
+    if (std::fabs(p.x) > 0.5f || std::fabs(p.z) > 0.5f) return false;
+    *cx = std::clamp((int)((p.x + 0.5f) * 256.0f), 0, 255);
+    *cy = std::clamp((int)((p.z + 0.5f) * 256.0f), 0, 255);
+    return true;
+}
+
+static void queueStroke(int sx, int sy, int ex, int ey) {
+    bool erase =
+        glfwGetKey(g_window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS ||
+        glfwGetKey(g_window, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS ||
+        glfwGetKey(g_window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+        glfwGetKey(g_window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
+    g_renderer.requestDraw(sx, sy, ex, ey, g_ui.brushRadius, erase ? 0u : 1u);
+}
 
 static void keyCallback(GLFWwindow*, int key, int, int action, int) {
     if (action != GLFW_PRESS) return;
     if (ImGui::GetIO().WantCaptureKeyboard) return;
     if (key == GLFW_KEY_SPACE) g_ui.paused = !g_ui.paused;
     else if (key == GLFW_KEY_R) g_renderer.requestReseed(g_ui.density);
+    else if (key == GLFW_KEY_B) g_ui.drawMode = !g_ui.drawMode;
 }
 
 static void mouseButtonCallback(GLFWwindow* window, int button, int action, int) {
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (action == GLFW_PRESS && !ImGui::GetIO().WantCaptureMouse) {
-            g_drag = true;
-            glfwGetCursorPos(window, &g_lastX, &g_lastY);
+            if (g_ui.drawMode) {
+                int cx, cy;
+                if (pickTopCell(&cx, &cy)) {
+                    g_drawDrag = true;
+                    g_lastCellValid = true;
+                    g_lastCellX = cx;
+                    g_lastCellY = cy;
+                    queueStroke(cx, cy, cx, cy);
+                } else {
+                    g_drawDrag = true;
+                    g_lastCellValid = false;
+                }
+            } else {
+                g_drag = true;
+                glfwGetCursorPos(window, &g_lastX, &g_lastY);
+            }
         } else if (action == GLFW_RELEASE) {
             g_drag = false;
+            g_drawDrag = false;
         }
     } else if (button == GLFW_MOUSE_BUTTON_RIGHT || button == GLFW_MOUSE_BUTTON_MIDDLE) {
         if (action == GLFW_PRESS && !ImGui::GetIO().WantCaptureMouse) {
@@ -64,7 +123,21 @@ static void cursorPosCallback(GLFWwindow*, double x, double y) {
     float dy = (float)(y - g_lastY);
     g_lastX = x;
     g_lastY = y;
-    if (g_drag) {
+    if (g_drawDrag) {
+        int cx, cy;
+        if (pickTopCell(&cx, &cy)) {
+            if (g_lastCellValid) {
+                queueStroke(g_lastCellX, g_lastCellY, cx, cy);
+            } else {
+                queueStroke(cx, cy, cx, cy);
+            }
+            g_lastCellValid = true;
+            g_lastCellX = cx;
+            g_lastCellY = cy;
+        } else {
+            g_lastCellValid = false;
+        }
+    } else if (g_drag) {
         g_cam.yaw += dx * 0.006f;
         g_cam.pitch += dy * 0.006f;
         g_cam.pitch = std::clamp(g_cam.pitch, -1.45f, 1.45f);
@@ -109,8 +182,15 @@ static void drawPanel(Renderer& renderer, float fps) {
     ImGui::Separator();
     ImGui::Checkbox("Paused (Space)", &g_ui.paused);
     ImGui::SliderFloat("Sim speed (Hz)", &g_ui.tickRate, 1.0f, 60.0f, "%.0f");
+    if (ImGui::Button("Clear")) renderer.requestClear();
+    ImGui::SameLine();
     if (ImGui::Button("Reseed (R)")) renderer.requestReseed(g_ui.density);
     ImGui::SliderFloat("Seed density", &g_ui.density, 0.05f, 0.60f, "%.2f");
+    ImGui::Separator();
+    ImGui::Checkbox("Draw (B) — LMB paints, Alt/Shift erases", &g_ui.drawMode);
+    if (g_ui.drawMode) {
+        ImGui::SliderInt("Brush radius", &g_ui.brushRadius, 1, 16);
+    }
     ImGui::Separator();
     ImGui::SliderFloat("Hue cycle (gens)", &g_ui.hueCycle, 16.0f, 4096.0f, "%.0f",
                        ImGuiSliderFlags_Logarithmic);
@@ -142,6 +222,7 @@ int main() {
         return 1;
     }
     void* nsview = (void*)glfwGetCocoaView(window);
+    g_window = window;
 
     ImGui::CreateContext();
     glfwSetKeyCallback(window, keyCallback);

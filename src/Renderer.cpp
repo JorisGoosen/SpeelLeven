@@ -50,6 +50,8 @@ bool Renderer::init(void* nsview, void* caLayer) {
     if (!seedPSO_) goto fail;
     lifePSO_ = device_->newComputePipelineState(getFn(lib, "lifeKernel"), &err);
     if (!lifePSO_) goto fail;
+    drawPSO_ = device_->newComputePipelineState(getFn(lib, "drawKernel"), &err);
+    if (!drawPSO_) goto fail;
 
     {
         MTL::RenderPipelineDescriptor* rpd = MTL::RenderPipelineDescriptor::alloc()->init();
@@ -112,6 +114,18 @@ void Renderer::encodeSeed(float density, MTL::CommandBuffer* cb) {
     enc->endEncoding();
 }
 
+void Renderer::encodeDraw(const DrawParams& d, MTL::CommandBuffer* cb) {
+    auto* enc = cb->computeCommandEncoder();
+    enc->setComputePipelineState(drawPSO_);
+    enc->setTexture(vol_, 0);
+    enc->setBytes(&d, sizeof(d), 0);
+    enc->dispatchThreads(MTL::Size((NS::UInteger)d.steps,
+                                   (NS::UInteger)(2 * d.radius + 1),
+                                   (NS::UInteger)(2 * d.radius + 1)),
+                         MTL::Size(1, 16, 16));
+    enc->endEncoding();
+}
+
 void Renderer::encodeTicks(uint32_t ticks, MTL::CommandBuffer* cb) {
     for (uint32_t i = 0; i < ticks; ++i) {
         MTL::BlitCommandEncoder* blit = cb->blitCommandEncoder();
@@ -145,10 +159,15 @@ void Renderer::readbackPopulation() {
 void Renderer::endFrame(CamUniforms& cam, uint32_t ticks) {
     MTL::CommandBuffer* cb = queue_->commandBuffer();
 
-    if (reseedPending_) {
+    if (clearPending_) {
+        encodeSeed(0.0f, cb);
+        clearPending_ = false;
+    } else if (reseedPending_) {
         encodeSeed(reseedDensity_, cb);
         reseedPending_ = false;
     }
+    for (const DrawParams& d : pendingStrokes_) encodeDraw(d, cb);
+    pendingStrokes_.clear();
     encodeTicks(ticks, cb);
     cam.head = head_;
 

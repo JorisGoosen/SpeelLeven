@@ -24,6 +24,30 @@ struct Cam {
     uint head;
 };
 
+struct DrawParams {
+    int2 start;
+    int2 end;
+    int radius;
+    int steps;
+    uint value;
+    uint head;
+};
+
+kernel void drawKernel(texture3d<uint, access::write> vol [[texture(0)]],
+                       constant DrawParams& dp [[buffer(0)]],
+                       uint3 tid [[thread_position_in_grid]])
+{
+    int r = dp.radius;
+    int oy = (int)tid.y - r;
+    int ox = (int)tid.z - r;
+    if (ox * ox + oy * oy > r * r) return;
+    float f = (dp.steps > 1) ? (float)tid.x / (float)(dp.steps - 1) : 0.0f;
+    float2 c = mix(float2(dp.start), float2(dp.end), f);
+    int2 cell = int2(round(c)) + int2(ox, oy);
+    if (cell.x < 0 || cell.x > 255 || cell.y < 0 || cell.y > 255) return;
+    vol.write(uint4(dp.value, 0u, 0u, 0u), uint3((uint)cell.x, (uint)cell.y, dp.head));
+}
+
 inline uint hashCoord(uint3 v) {
     uint h = v.x * 73856093u ^ v.y * 19349663u ^ v.z * 83492791u;
     h = (h ^ (h >> 13u)) * 1274126177u;
