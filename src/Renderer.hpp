@@ -14,8 +14,12 @@ struct CamUniforms {
     float aspect;
     float hueCycle;
     float opacity;
+    float ior;
+    float absorption;
+    float reflStrength;
+    float metallic;
+    float faceting;
     uint32_t head;
-    uint32_t pad[3];
 };
 
 class Renderer {

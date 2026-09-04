@@ -20,6 +20,11 @@ struct UIState {
     float density = 0.28f;
     float hueCycle = 256.0f;
     float opacity = 0.9f;
+    float ior = 1.45f;
+    float absorption = 0.8f;
+    float reflStrength = 1.0f;
+    float metallic = 0.15f;
+    float faceting = 1.0f;
 };
 
 static UIState g_ui;
@@ -56,7 +61,7 @@ static void cursorPosCallback(GLFWwindow*, double x, double y) {
 
 static void scrollCallback(GLFWwindow*, double, double yoff) {
     if (ImGui::GetIO().WantCaptureMouse) return;
-    g_cam.dist = std::clamp(g_cam.dist * std::exp(-(float)yoff * 0.08f), 0.7f, 6.0f);
+    g_cam.dist = std::clamp(g_cam.dist * std::exp(-(float)yoff * 0.08f), 1.15f, 6.0f);
 }
 
 static simd::float4 toSimd(const glm::vec3& v) {
@@ -73,6 +78,11 @@ static void buildCam(CamUniforms& cam, float aspect) {
     cam.aspect = aspect;
     cam.hueCycle = g_ui.hueCycle;
     cam.opacity = g_ui.opacity;
+    cam.ior = g_ui.ior;
+    cam.absorption = g_ui.absorption;
+    cam.reflStrength = g_ui.reflStrength;
+    cam.metallic = g_ui.metallic;
+    cam.faceting = g_ui.faceting;
     cam.head = 0;
 }
 
@@ -90,6 +100,12 @@ static void drawPanel(Renderer& renderer, float fps) {
     ImGui::SliderFloat("Hue cycle (gens)", &g_ui.hueCycle, 16.0f, 4096.0f, "%.0f",
                        ImGuiSliderFlags_Logarithmic);
     ImGui::SliderFloat("Cell opacity", &g_ui.opacity, 0.30f, 1.0f, "%.2f");
+    ImGui::Separator();
+    ImGui::SliderFloat("IOR", &g_ui.ior, 1.0f, 2.0f, "%.2f");
+    ImGui::SliderFloat("Absorption", &g_ui.absorption, 0.0f, 2.0f, "%.2f");
+    ImGui::SliderFloat("Reflectivity", &g_ui.reflStrength, 0.0f, 1.5f, "%.2f");
+    ImGui::SliderFloat("Metallic", &g_ui.metallic, 0.0f, 1.0f, "%.2f");
+    ImGui::SliderFloat("Faceting", &g_ui.faceting, 0.0f, 1.0f, "%.2f");
     ImGui::Separator();
     ImGui::Text("generation %llu", (unsigned long long)renderer.generation);
     ImGui::Text("population %u", renderer.population);
