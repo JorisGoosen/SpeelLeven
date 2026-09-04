@@ -31,6 +31,7 @@ static UIState g_ui;
 static OrbitCamera g_cam;
 static Renderer g_renderer;
 static bool g_drag = false;
+static bool g_pan = false;
 static double g_lastX = 0.0, g_lastY = 0.0;
 
 static void keyCallback(GLFWwindow*, int key, int, int action, int) {
@@ -41,22 +42,36 @@ static void keyCallback(GLFWwindow*, int key, int, int action, int) {
 }
 
 static void mouseButtonCallback(GLFWwindow* window, int button, int action, int) {
-    if (button != GLFW_MOUSE_BUTTON_LEFT) return;
-    if (action == GLFW_PRESS && !ImGui::GetIO().WantCaptureMouse) {
-        g_drag = true;
-        glfwGetCursorPos(window, &g_lastX, &g_lastY);
-    } else if (action == GLFW_RELEASE) {
-        g_drag = false;
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        if (action == GLFW_PRESS && !ImGui::GetIO().WantCaptureMouse) {
+            g_drag = true;
+            glfwGetCursorPos(window, &g_lastX, &g_lastY);
+        } else if (action == GLFW_RELEASE) {
+            g_drag = false;
+        }
+    } else if (button == GLFW_MOUSE_BUTTON_RIGHT || button == GLFW_MOUSE_BUTTON_MIDDLE) {
+        if (action == GLFW_PRESS && !ImGui::GetIO().WantCaptureMouse) {
+            g_pan = true;
+            glfwGetCursorPos(window, &g_lastX, &g_lastY);
+        } else if (action == GLFW_RELEASE) {
+            g_pan = false;
+        }
     }
 }
 
 static void cursorPosCallback(GLFWwindow*, double x, double y) {
-    if (!g_drag) return;
-    g_cam.yaw += (float)(x - g_lastX) * 0.006f;
-    g_cam.pitch += (float)(y - g_lastY) * 0.006f;
-    g_cam.pitch = std::clamp(g_cam.pitch, -1.45f, 1.45f);
+    float dx = (float)(x - g_lastX);
+    float dy = (float)(y - g_lastY);
     g_lastX = x;
     g_lastY = y;
+    if (g_drag) {
+        g_cam.yaw += dx * 0.006f;
+        g_cam.pitch += dy * 0.006f;
+        g_cam.pitch = std::clamp(g_cam.pitch, -1.45f, 1.45f);
+    } else if (g_pan) {
+        float k = g_cam.dist * 0.0016f;
+        g_cam.target += (-dx * g_cam.right + dy * g_cam.up) * k;
+    }
 }
 
 static void scrollCallback(GLFWwindow*, double, double yoff) {
@@ -110,7 +125,7 @@ static void drawPanel(Renderer& renderer, float fps) {
     ImGui::Text("generation %llu", (unsigned long long)renderer.generation);
     ImGui::Text("population %u", renderer.population);
     ImGui::Spacing();
-    ImGui::TextDisabled("LMB drag: orbit · scroll: zoom");
+    ImGui::TextDisabled("LMB orbit · RMB pan · WASD pan · scroll zoom");
     ImGui::End();
 }
 
@@ -155,6 +170,14 @@ int main() {
         last = now;
         dt = std::clamp(dt, 1e-5f, 0.1f);
         fps = fps * 0.9f + (1.0f / dt) * 0.1f;
+
+        if (!ImGui::GetIO().WantCaptureKeyboard) {
+            float ms = g_cam.dist * 1.2f * dt;
+            if (glfwGetKey(window, GLFW_KEY_A)) g_cam.target -= g_cam.right * ms;
+            if (glfwGetKey(window, GLFW_KEY_D)) g_cam.target += g_cam.right * ms;
+            if (glfwGetKey(window, GLFW_KEY_W)) g_cam.target += g_cam.up * ms;
+            if (glfwGetKey(window, GLFW_KEY_S)) g_cam.target -= g_cam.up * ms;
+        }
 
         uint32_t ticks = 0;
         if (!g_ui.paused) {
